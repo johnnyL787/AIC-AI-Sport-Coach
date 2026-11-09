@@ -40,6 +40,16 @@ ARM_JOINTS = [
 # Nilesh: add hips, knees, ankles, heels, feet here, e.g. ("left_knee", 25)
 # Hips 23/24, knees 25/26, ankles 27/28, heels 29/30, feet 31/32
 LEG_JOINTS = [
+    ("left_hip", 23),
+    ("right_hip", 24),
+    ("left_knee", 25),
+    ("right_knee", 26),
+    ("left_ankle", 27),
+    ("right_ankle", 28),
+    ("left_heel", 29),
+    ("right_heel", 30),
+    ("left_foot_index", 31),
+    ("right_foot_index", 32),
 ]
 
 TRACKED_JOINTS = ARM_JOINTS + LEG_JOINTS
