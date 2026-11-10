@@ -1,67 +1,70 @@
 
 import streamlit as st
+from html import escape
 
-# ----------------------------------
-# PAGE CONFIG
-# ----------------------------------
+# -------------------------------------------------
+# PAGE SETUP
+# -------------------------------------------------
 
 st.set_page_config(
     page_title="Form Coach | Volleyball",
     page_icon="🏐",
-    layout="centered",
+    layout="wide",
     initial_sidebar_state="collapsed",
 )
 
-# ----------------------------------
+# -------------------------------------------------
 # STYLING
-# ----------------------------------
+# -------------------------------------------------
 
 st.markdown("""
 <style>
     :root {
-        --background: #f7f7f5;
-        --surface: #ffffff;
-        --text: #202522;
-        --muted: #747a76;
-        --border: #e5e6e1;
-        --orange: #e75b35;
-        --orange-hover: #d34b28;
+        --orange: #ff630d;
+        --orange-hover: #e75509;
+        --black: #171717;
+        --muted: #78716c;
+        --bg: #faf9f6;
+        --border: #e7e5e2;
     }
 
     .stApp,
     [data-testid="stAppViewContainer"] {
-        background: var(--background);
-        color: var(--text);
+        background: var(--bg);
+        color: var(--black);
     }
 
     [data-testid="stHeader"] {
         background: transparent;
     }
 
+    .block-container {
+        max-width: 1080px;
+        padding: 2rem 2.5rem 4rem;
+    }
+
     #MainMenu, footer {
         visibility: hidden;
     }
 
-    .block-container {
-        max-width: 760px;
-        padding-top: 2.2rem;
-        padding-bottom: 3rem;
-    }
+    /* Header */
 
-    /* Navigation */
-
-    .nav {
+    .app-nav {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding-bottom: 22px;
         border-bottom: 1px solid var(--border);
+        padding-bottom: 20px;
     }
 
-    .brand {
+    .app-brand {
         display: flex;
         align-items: center;
-        gap: 11px;
+        gap: 12px;
+        font-size: 16px;
+        font-weight: 800;
+        color: var(--black);
+        letter-spacing: -0.4px;
     }
 
     .brand-mark {
@@ -70,203 +73,156 @@ st.markdown("""
         justify-content: center;
         width: 34px;
         height: 34px;
+        border-radius: 6px;
         background: var(--orange);
         color: white;
-        border-radius: 7px;
-        font-weight: 800;
-        font-size: 17px;
+        font-size: 21px;
     }
 
-    .brand-name {
-        font-size: 16px;
-        font-weight: 800;
-        letter-spacing: -0.6px;
-        color: var(--text);
-    }
-
-    .nav-label {
+    .app-chapter {
         font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 1.2px;
+        letter-spacing: 1px;
+        font-weight: 650;
         color: var(--muted);
     }
 
     /* Hero */
 
     .hero {
-        padding-top: 48px;
-        padding-bottom: 38px;
+        padding: 48px 0 35px;
     }
 
     .eyebrow {
         font-size: 11px;
-        font-weight: 800;
-        letter-spacing: 1.7px;
+        font-weight: 750;
+        letter-spacing: 1.3px;
         color: var(--orange);
         margin-bottom: 13px;
     }
 
     .hero-title {
-        color: var(--text);
-        font-size: clamp(32px, 6vw, 43px);
+        font-size: clamp(31px, 5vw, 43px);
         font-weight: 800;
-        letter-spacing: -1.7px;
-        line-height: 1.16;
-        margin-bottom: 16px;
+        letter-spacing: -1.6px;
+        color: var(--black);
+        line-height: 1.2;
+        margin-bottom: 12px;
     }
 
     .hero-description {
         font-size: 15px;
         line-height: 1.7;
         color: var(--muted);
-        max-width: 475px;
+        max-width: 650px;
     }
 
-    /* Step indicator */
+    /* Workspace */
 
-    .steps {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        margin-bottom: 32px;
+    .st-key-workspace {
+        background: white;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        padding: 30px;
     }
 
-    .step {
-        display: flex;
-        align-items: center;
-        gap: 9px;
-        white-space: nowrap;
-        font-size: 12px;
-        font-weight: 600;
-        color: var(--muted);
-    }
-
-    .step-number {
-        width: 26px;
-        height: 26px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border: 1px solid #d8dad5;
-        border-radius: 50%;
+    .section-number {
         font-size: 11px;
-        font-weight: 700;
-    }
-
-    .step.active {
-        color: var(--text);
-    }
-
-    .step.active .step-number {
-        background: var(--orange);
-        border-color: var(--orange);
-        color: white;
-    }
-
-    .step-line {
-        height: 1px;
-        background: var(--border);
-        flex: 1;
-        min-width: 12px;
-    }
-
-    /* Section heading */
-
-    .section-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 17px;
+        font-weight: 750;
+        color: var(--orange);
+        letter-spacing: 1px;
+        margin-bottom: 7px;
     }
 
     .section-title {
-        color: var(--text);
-        font-size: 19px;
+        font-size: 21px;
         font-weight: 750;
         letter-spacing: -0.5px;
+        color: var(--black);
+        margin-bottom: 6px;
     }
 
-    .section-meta {
+    .section-description {
+        font-size: 13px;
+        line-height: 1.6;
         color: var(--muted);
-        font-size: 11px;
-        font-weight: 700;
-        letter-spacing: 1px;
+        margin-bottom: 22px;
     }
 
-    /* Uploader */
+    /* Input labels */
+
+    .st-key-workspace
+    [data-testid="stWidgetLabel"] p {
+        color: #38342f;
+        font-size: 13px;
+        font-weight: 650;
+    }
+
+    /* Select and text input */
+
+    .st-key-workspace
+    [data-baseweb="select"] > div {
+        background: #ffffff;
+        border: 1px solid #d9d6d1;
+        border-radius: 6px;
+        color: var(--black);
+        min-height: 44px;
+    }
+
+    .st-key-workspace
+    [data-baseweb="select"] span,
+    .st-key-workspace
+    [data-baseweb="select"] input {
+        color: var(--black);
+    }
+
+    .st-key-workspace
+    [data-testid="stTextInput"] input {
+        background: white;
+        color: var(--black);
+        border: 1px solid #d9d6d1;
+        border-radius: 6px;
+    }
+
+    /* File uploader */
 
     [data-testid="stFileUploader"] {
-        background: var(--surface);
-        border: 1px solid var(--border);
-        border-radius: 10px;
-        padding: 14px;
+        background: #faf9f6;
+        border: 1px dashed #d6d1ca;
+        border-radius: 8px;
+        padding: 12px;
     }
 
     [data-testid="stFileUploader"] section {
-        background: #fafaf9;
-        border: 1px dashed #d2d5d0;
-        border-radius: 8px;
-        padding: 26px 12px;
-    }
-
-    [data-testid="stFileUploader"] section:hover {
-        border-color: var(--orange);
-        background: #fffaf7;
-    }
-
-    [data-testid="stFileUploader"] section button {
-        background: #ffffff;
-        color: var(--text);
-        border: 1px solid #d8dad5;
-        border-radius: 6px;
-        font-weight: 600;
-        box-shadow: none;
-    }
-
-    [data-testid="stFileUploader"] section button:hover {
-        color: var(--orange);
-        border-color: var(--orange);
+        background: transparent;
+        border: none;
+        padding: 22px 8px;
     }
 
     [data-testid="stFileUploader"] p,
     [data-testid="stFileUploader"] span,
     [data-testid="stFileUploader"] small {
-        color: var(--text);
+        color: #44403c;
     }
 
-    [data-testid="stFileUploader"] small {
-        color: var(--muted);
+    [data-testid="stFileUploader"] button {
+        background: white;
+        color: var(--black);
+        border: 1px solid #d6d1ca;
+        border-radius: 6px;
     }
 
-    /* Uploaded video */
-
-    [data-testid="stVideo"] {
-        border-radius: 8px;
-        overflow: hidden;
+    [data-testid="stFileUploader"] button:hover {
+        border-color: var(--orange);
+        color: var(--orange);
     }
 
-    .video-heading {
-        margin-top: 23px;
-        margin-bottom: 12px;
-        font-size: 15px;
-        font-weight: 700;
-        color: var(--text);
-    }
-
-    .video-file {
-        font-size: 12px;
-        color: var(--muted);
-        margin: 10px 0 23px;
-        overflow-wrap: anywhere;
-    }
-
-    /* Primary action */
+    /* Primary button */
 
     div.stButton > button[kind="primary"] {
         background: var(--orange);
         border: 1px solid var(--orange);
-        border-radius: 7px;
         color: white;
+        border-radius: 6px;
         min-height: 48px;
         font-size: 14px;
         font-weight: 700;
@@ -279,193 +235,372 @@ st.markdown("""
         color: white;
     }
 
-    div.stButton > button[kind="primary"]:focus {
-        color: white;
-    }
-
     div.stButton > button[kind="primary"] p {
         color: inherit;
     }
 
-    /* Alerts */
+    /* Video */
 
-    [data-testid="stAlert"] {
+    [data-testid="stVideo"] {
         border-radius: 7px;
-        box-shadow: none;
+        overflow: hidden;
     }
 
-    /* Footer */
+    .file-info {
+        font-size: 12px;
+        color: var(--muted);
+        padding: 10px 0;
+        overflow-wrap: anywhere;
+    }
 
-    .page-footer {
-        border-top: 1px solid var(--border);
-        margin-top: 55px;
-        padding-top: 20px;
-        display: flex;
-        justify-content: space-between;
-        gap: 12px;
-        font-size: 11px;
+    /* Feedback */
+
+    .feedback-box {
+        background: #faf9f6;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 22px;
+        min-height: 180px;
+    }
+
+    .feedback-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--black);
+        margin-bottom: 10px;
+    }
+
+    .feedback-description {
+        font-size: 13px;
+        line-height: 1.7;
         color: var(--muted);
     }
 
-    @media (max-width: 600px) {
+    /* Other text */
+
+    .st-key-workspace .stCaption p {
+        color: var(--muted);
+    }
+
+    .st-key-workspace hr {
+        border-color: var(--border);
+        margin: 28px 0;
+    }
+
+    .app-footer {
+        border-top: 1px solid var(--border);
+        padding-top: 20px;
+        margin-top: 45px;
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 12px;
+    }
+
+    @media (max-width: 700px) {
         .block-container {
-            padding-top: 1.2rem;
+            padding: 1rem 1rem 2rem;
+        }
+
+        .st-key-workspace {
+            padding: 20px;
         }
 
         .hero {
-            padding-top: 34px;
-            padding-bottom: 29px;
+            padding: 35px 0 25px;
         }
 
-        .steps {
-            gap: 7px;
+        .app-chapter {
+            font-size: 9px;
         }
 
-        .step {
-            font-size: 10px;
-            gap: 5px;
-        }
-
-        .step-number {
-            width: 22px;
-            height: 22px;
-        }
-
-        .page-footer {
+        .app-footer {
             flex-direction: column;
+            gap: 8px;
         }
     }
-
 </style>
 """, unsafe_allow_html=True)
 
 
-# ----------------------------------
+# -------------------------------------------------
 # NAVIGATION
-# ----------------------------------
+# -------------------------------------------------
 
 st.markdown("""
-<div class="nav">
-    <div class="brand">
+<div class="app-nav">
+    <div class="app-brand">
         <div class="brand-mark">F</div>
-        <div class="brand-name">FORM / COACH</div>
+        FORM COACH
     </div>
-    <div class="nav-label">VOLLEYBALL</div>
+    <div class="app-chapter">
+        AI COLLECTIVE / UCSD
+    </div>
 </div>
 """, unsafe_allow_html=True)
 
 
-# ----------------------------------
+# -------------------------------------------------
 # HERO
-# ----------------------------------
+# -------------------------------------------------
 
 st.markdown("""
 <div class="hero">
-    <div class="eyebrow">MOVEMENT ANALYSIS</div>
+    <div class="eyebrow">
+        VOLLEYBALL MOVEMENT ANALYSIS
+    </div>
     <div class="hero-title">
-        Better form.<br>
-        Better performance.
+        Improve your technique.
     </div>
     <div class="hero-description">
-        Improve your volleyball setting technique through
-        video analysis. Upload a recording of your form
-        to get started.
+        Upload a video of your volleyball setting
+        technique and provide a few details about
+        your movement to prepare for form analysis.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 
-# ----------------------------------
-# UPLOAD SECTION
-# ----------------------------------
+# -------------------------------------------------
+# WORKSPACE
+# -------------------------------------------------
 
-st.markdown("""
-<div class="steps">
-    <div class="step active">
-        <div class="step-number">1</div>
-        Upload
+with st.container(key="workspace"):
+
+    # PLAYER DETAILS
+
+    st.markdown("""
+    <div class="section-number">
+        01 / PLAYER DETAILS
     </div>
-    <div class="step-line"></div>
-    <div class="step">
-        <div class="step-number">2</div>
-        Analyze
+    <div class="section-title">
+        Movement information
     </div>
-    <div class="step-line"></div>
-    <div class="step">
-        <div class="step-number">3</div>
-        Results
+    <div class="section-description">
+        Tell us about your stance and the type
+        of volleyball set you're performing.
     </div>
-</div>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
 
-st.markdown("""
-<div class="section-header">
-    <div class="section-title">Upload your video</div>
-    <div class="section-meta">STEP 01</div>
-</div>
-""", unsafe_allow_html=True)
+    col1, col2 = st.columns(2, gap="medium")
 
-uploaded_video = st.file_uploader(
-    "Choose a video of your volleyball setting technique",
-    type=["mp4", "mov"],
-    help="Accepted formats: MP4 and MOV.",
-    label_visibility="collapsed",
-)
+    with col1:
+        dominant_hand = st.selectbox(
+            "Dominant hand",
+            [
+                "Right-handed",
+                "Left-handed",
+                "Ambidextrous"
+            ],
+            index=None,
+            placeholder="Choose an option"
+        )
 
+    with col2:
+        lead_leg = st.selectbox(
+            "Preferred lead leg",
+            [
+                "Right",
+                "Left",
+                "No preference",
+                "Not sure"
+            ],
+            index=None,
+            placeholder="Choose an option",
+            help=(
+                "Which foot do you typically position "
+                "slightly forward when setting?"
+            )
+        )
 
-# ----------------------------------
-# VIDEO PREVIEW & ANALYZE
-# ----------------------------------
+    st.write("")
 
-if uploaded_video is not None:
+    col3, col4 = st.columns(2, gap="medium")
 
-    st.markdown(
-        '<div class="video-heading">Video preview</div>',
-        unsafe_allow_html=True
+    with col3:
+        set_type = st.selectbox(
+            "Type of set",
+            [
+                "High / Outside",
+                "Quick / Middle",
+                "Back set",
+                "Shoot / Fast",
+                "Pipe / Back-row",
+                "Other"
+            ],
+            index=None,
+            placeholder="Choose a set type"
+        )
+
+        custom_set = ""
+
+        if set_type == "Other":
+            custom_set = st.text_input(
+                "Specify set type",
+                placeholder="Enter your set type",
+                max_chars=80
+            )
+
+    with col4:
+        set_direction = st.selectbox(
+            "Setting direction",
+            [
+                "Left",
+                "Right",
+                "Straight ahead",
+                "Not sure"
+            ],
+            index=None,
+            placeholder="Choose a direction",
+            help=(
+                "Direction relative to the player, "
+                "not the camera."
+            )
+        )
+
+    st.divider()
+
+    # VIDEO ANALYSIS
+
+    st.markdown("""
+    <div class="section-number">
+        02 / VIDEO ANALYSIS
+    </div>
+    <div class="section-title">
+        Upload your recording
+    </div>
+    <div class="section-description">
+        Upload an MP4 or MOV video. A preview will
+        appear once the file has been selected.
+    </div>
+    """, unsafe_allow_html=True)
+
+    video_col, feedback_col = st.columns(
+        [1.2, 1],
+        gap="large"
     )
 
-    st.video(
-        uploaded_video,
-        format=uploaded_video.type or "video/mp4"
-    )
+    with video_col:
 
-    # File details
-    file_size = uploaded_video.size / (1024 * 1024)
+        st.markdown("**Video**")
 
-    st.markdown(
-        f'<div class="video-file">'
-        f'{uploaded_video.name} · {file_size:.1f} MB'
-        f'</div>',
-        unsafe_allow_html=True
-    )
+        uploaded_video = st.file_uploader(
+            "Upload video",
+            type=["mp4", "mov"],
+            label_visibility="collapsed"
+        )
 
-    # Placeholder for backend integration
+        if uploaded_video is not None:
+
+            st.video(uploaded_video)
+
+            filename = escape(uploaded_video.name)
+            size_mb = (
+                uploaded_video.size / (1024 * 1024)
+            )
+
+            st.markdown(
+                f'<div class="file-info">'
+                f'{filename} · {size_mb:.1f} MB'
+                f'</div>',
+                unsafe_allow_html=True
+            )
+
+        else:
+
+            st.caption(
+                "Keep your upper body and feet "
+                "visible in the recording."
+            )
+
+    with feedback_col:
+
+        st.markdown("**Technique feedback**")
+
+        st.markdown("""
+        <div class="feedback-box">
+            <div class="feedback-title">
+                Analysis not available yet
+            </div>
+            <div class="feedback-description">
+                Once the movement analysis backend
+                is connected, this section will
+                display feedback on your setting
+                technique.
+                <br><br>
+                No analysis has been performed.
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.write("")
+
+    # ANALYZE BUTTON
+
     if st.button(
         "Analyze video",
         type="primary",
-        use_container_width=True
+        use_container_width=True,
+        disabled=uploaded_video is None
     ):
-        st.info(
-            "Video analysis is coming soon. "
-            "The form detection system is not connected yet."
-        )
 
-else:
+        if not dominant_hand:
+            st.warning(
+                "Please select your dominant hand."
+            )
 
-    st.caption(
-        "Supported formats: MP4, MOV. "
-        "Record yourself setting a volleyball with your "
-        "upper body clearly visible."
-    )
+        elif not lead_leg:
+            st.warning(
+                "Please select your preferred lead leg."
+            )
+
+        elif not set_type:
+            st.warning(
+                "Please select your set type."
+            )
+
+        elif set_type == "Other" and not custom_set.strip():
+            st.warning(
+                "Please enter your set type."
+            )
+
+        elif not set_direction:
+            st.warning(
+                "Please select your setting direction."
+            )
+
+        else:
+
+            analysis_request = {
+                "dominant_hand": dominant_hand,
+                "lead_leg": lead_leg,
+                "set_type": (
+                    custom_set.strip()
+                    if set_type == "Other"
+                    else set_type
+                ),
+                "set_direction": set_direction,
+                "video_name": uploaded_video.name
+            }
+
+            st.session_state["analysis_request"] = (
+                analysis_request
+            )
+
+            st.info(
+                "Your video and movement details "
+                "are ready. Automated analysis "
+                "will be available soon."
+            )
 
 
-# ----------------------------------
+# -------------------------------------------------
 # FOOTER
-# ----------------------------------
+# -------------------------------------------------
 
 st.markdown("""
-<div class="page-footer">
-    <span>FORM / COACH</span>
+<div class="app-footer">
+    <span>FORM COACH</span>
     <span>Built by UCSD AI Collective</span>
 </div>
 """, unsafe_allow_html=True)
