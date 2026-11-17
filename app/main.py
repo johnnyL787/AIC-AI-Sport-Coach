@@ -14,6 +14,34 @@ st.set_page_config(
 )
 
 # -------------------------------------------------
+# PLACEHOLDER FEEDBACK
+# Replace this with actual backend results later
+# -------------------------------------------------
+
+PLACEHOLDER_CHECKS = [
+    {
+        "name": "Hand positioning",
+        "status": "Not evaluated",
+        "feedback": "Feedback will appear here."
+    },
+    {
+        "name": "Elbow positioning",
+        "status": "Not evaluated",
+        "feedback": "Feedback will appear here."
+    },
+    {
+        "name": "Knee positioning",
+        "status": "Not evaluated",
+        "feedback": "Feedback will appear here."
+    },
+    {
+        "name": "Body alignment",
+        "status": "Not evaluated",
+        "feedback": "Feedback will appear here."
+    },
+]
+
+# -------------------------------------------------
 # STYLING
 # -------------------------------------------------
 
@@ -148,7 +176,7 @@ st.markdown("""
         margin-bottom: 22px;
     }
 
-    /* Input labels */
+    /* Inputs */
 
     .st-key-workspace
     [data-testid="stWidgetLabel"] p {
@@ -157,11 +185,9 @@ st.markdown("""
         font-weight: 650;
     }
 
-    /* Select and text input */
-
     .st-key-workspace
     [data-baseweb="select"] > div {
-        background: #ffffff;
+        background: white;
         border: 1px solid #d9d6d1;
         border-radius: 6px;
         color: var(--black);
@@ -216,7 +242,7 @@ st.markdown("""
         color: var(--orange);
     }
 
-    /* Primary button */
+    /* Analyze button */
 
     div.stButton > button[kind="primary"] {
         background: var(--orange);
@@ -253,7 +279,7 @@ st.markdown("""
         overflow-wrap: anywhere;
     }
 
-    /* Feedback */
+    /* Feedback placeholder */
 
     .feedback-box {
         background: #faf9f6;
@@ -276,11 +302,54 @@ st.markdown("""
         color: var(--muted);
     }
 
-    /* Other text */
+    /* Individual feedback cards */
 
-    .st-key-workspace .stCaption p {
-        color: var(--muted);
+    .feedback-card {
+        background: #ffffff;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 12px;
     }
+
+    .feedback-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 10px;
+        margin-bottom: 10px;
+    }
+
+    .feedback-card-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: var(--black);
+    }
+
+    .feedback-status {
+        background: #f2f0ec;
+        color: #69645d;
+        border-radius: 4px;
+        font-size: 10px;
+        font-weight: 650;
+        padding: 5px 8px;
+        white-space: nowrap;
+    }
+
+    .feedback-card-description {
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+    }
+
+    .demo-label {
+        font-size: 11px;
+        color: var(--orange);
+        font-weight: 700;
+        margin-bottom: 13px;
+    }
+
+    /* Footer */
 
     .st-key-workspace hr {
         border-color: var(--border);
@@ -324,7 +393,53 @@ st.markdown("""
 
 
 # -------------------------------------------------
-# NAVIGATION
+# FEEDBACK CARD FUNCTION
+# -------------------------------------------------
+
+def display_feedback_cards(checks):
+    """
+    Display one feedback card per technique check.
+
+    Later, replace the placeholder checks with
+    results returned by the analysis backend.
+    """
+
+    st.markdown(
+        '<div class="demo-label">'
+        'DEMO RESULTS · NOT ANALYZED'
+        '</div>',
+        unsafe_allow_html=True
+    )
+
+    for check in checks:
+
+        name = escape(str(check["name"]))
+        status = escape(str(check["status"]))
+        feedback = escape(str(check["feedback"]))
+
+        st.markdown(
+            f"""
+            <div class="feedback-card">
+                <div class="feedback-card-header">
+                    <div class="feedback-card-title">
+                        {name}
+                    </div>
+                    <div class="feedback-status">
+                        {status}
+                    </div>
+                </div>
+
+                <div class="feedback-card-description">
+                    {feedback}
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True
+        )
+
+
+# -------------------------------------------------
+# HEADER
 # -------------------------------------------------
 
 st.markdown("""
@@ -367,7 +482,9 @@ st.markdown("""
 
 with st.container(key="workspace"):
 
+    # ---------------------------------------------
     # PLAYER DETAILS
+    # ---------------------------------------------
 
     st.markdown("""
     <div class="section-number">
@@ -460,7 +577,9 @@ with st.container(key="workspace"):
 
     st.divider()
 
+    # ---------------------------------------------
     # VIDEO ANALYSIS
+    # ---------------------------------------------
 
     st.markdown("""
     <div class="section-number">
@@ -517,25 +636,14 @@ with st.container(key="workspace"):
 
         st.markdown("**Technique feedback**")
 
-        st.markdown("""
-        <div class="feedback-box">
-            <div class="feedback-title">
-                Analysis not available yet
-            </div>
-            <div class="feedback-description">
-                Once the movement analysis backend
-                is connected, this section will
-                display feedback on your setting
-                technique.
-                <br><br>
-                No analysis has been performed.
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Reserve space for feedback cards
+        feedback_placeholder = st.empty()
 
     st.write("")
 
+    # ---------------------------------------------
     # ANALYZE BUTTON
+    # ---------------------------------------------
 
     if st.button(
         "Analyze video",
@@ -571,6 +679,7 @@ with st.container(key="workspace"):
 
         else:
 
+            # Save input metadata for future analysis
             analysis_request = {
                 "dominant_hand": dominant_hand,
                 "lead_leg": lead_leg,
@@ -587,11 +696,64 @@ with st.container(key="workspace"):
                 analysis_request
             )
 
-            st.info(
-                "Your video and movement details "
-                "are ready. Automated analysis "
-                "will be available soon."
+            # Temporary backend output
+            st.session_state["feedback_results"] = [
+                check.copy()
+                for check in PLACEHOLDER_CHECKS
+            ]
+
+            # Link feedback to the current inputs
+            st.session_state["feedback_request"] = (
+                uploaded_video.name,
+                uploaded_video.size,
+                dominant_hand,
+                lead_leg,
+                set_type,
+                custom_set,
+                set_direction
             )
+
+    # ---------------------------------------------
+    # DISPLAY FEEDBACK
+    # ---------------------------------------------
+
+    current_request = (
+        uploaded_video.name if uploaded_video else None,
+        uploaded_video.size if uploaded_video else None,
+        dominant_hand,
+        lead_leg,
+        set_type,
+        custom_set,
+        set_direction
+    )
+
+    with feedback_placeholder.container():
+
+        if (
+            st.session_state.get("feedback_request")
+            == current_request
+            and st.session_state.get("feedback_results")
+        ):
+
+            display_feedback_cards(
+                st.session_state["feedback_results"]
+            )
+
+        else:
+
+            st.markdown("""
+            <div class="feedback-box">
+                <div class="feedback-title">
+                    No analysis yet
+                </div>
+                <div class="feedback-description">
+                    Upload your video and complete the
+                    player details, then click
+                    Analyze video to preview
+                    the feedback cards.
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
 
 # -------------------------------------------------
