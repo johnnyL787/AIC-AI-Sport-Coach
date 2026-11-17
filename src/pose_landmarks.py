@@ -27,6 +27,15 @@ from mediapipe.tasks.python import vision
 # "left"/"right" means the PERSON's left/right, not the screen's.
 # ---------------------------------------------------------------
 
+# Praneet: face (used by the ball contact check)
+FACE_JOINTS = [
+    ("nose", 0),
+    ("left_eye", 2),
+    ("right_eye", 5),
+    ("left_ear", 7),
+    ("right_ear", 8),
+]
+
 # Praneet: arms
 ARM_JOINTS = [
     ("left_shoulder", 11),
@@ -52,7 +61,7 @@ LEG_JOINTS = [
     ("right_foot_index", 32),
 ]
 
-TRACKED_JOINTS = ARM_JOINTS + LEG_JOINTS
+TRACKED_JOINTS = FACE_JOINTS + ARM_JOINTS + LEG_JOINTS
 
 # Lines that make up the skeleton (pairs of landmark numbers)
 SKELETON = [
