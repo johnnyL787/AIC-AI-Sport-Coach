@@ -1,21 +1,3 @@
-"""
-elbow_check.py
-Checks the setter's elbows at contact and as the ball is pushed out.
-
-Four checks (limits live in rules.py, ELBOW_RULES):
-  1. Elbow bend at contact     shoulder-elbow-wrist angle
-  2. Elbow height              elbows at or above the shoulders at contact
-  3. Arms push through         how much the elbow angle opens after contact
-  4. Both arms even            left angle vs right angle at contact
-
-From the side, the far arm is often hidden and MediaPipe guesses where it is.
-So a joint is only used when its visibility score is high enough, and the
-"both arms even" check is skipped when only one arm can be seen.
-
-Usage (run from the main repo folder):
-    python src/elbow_check.py out/clip_landmarks.csv data/clip.mp4 --ball ball_tracking.csv
-"""
-
 import argparse
 import math
 
@@ -58,12 +40,7 @@ CHECK_INFO = {
 NOT_MEASURED_TIP = "Film from the side with your arms in view through the end of the set."
 
 
-# ---------------------------------------------------------------
-# Math
-# ---------------------------------------------------------------
-
 def angle(a, b, c):
-    """Angle at point b, in degrees, made by points a-b-c (each is x, y)."""
     ab = (a[0] - b[0], a[1] - b[1])
     cb = (c[0] - b[0], c[1] - b[1])
     size = math.hypot(*ab) * math.hypot(*cb)
@@ -78,12 +55,7 @@ def average(values):
     return sum(values) / len(values) if values else None
 
 
-# ---------------------------------------------------------------
-# Reading one arm, only if MediaPipe could actually see it
-# ---------------------------------------------------------------
-
 def visible_point(row, name):
-    """(x, y) for a joint, or None if it's blank or not clearly visible."""
     x, y, vis = row.get(f"{name}_x"), row.get(f"{name}_y"), row.get(f"{name}_vis")
     if not x or not y:
         return None
@@ -93,7 +65,6 @@ def visible_point(row, name):
 
 
 def arm(row, side):
-    """Shoulder, elbow, wrist for one side ("left"/"right"), or None."""
     points = [visible_point(row, f"{side}_{joint}")
               for joint in ("shoulder", "elbow", "wrist")]
     return None if None in points else points
@@ -105,7 +76,6 @@ def elbow_angle(row, side):
 
 
 def elbow_height(row, side, torso):
-    """How far the elbow is above the shoulder, in torso lengths (up = positive)."""
     points = arm(row, side)
     if not points or not torso:
         return None
@@ -113,12 +83,7 @@ def elbow_height(row, side, torso):
     return (shoulder[1] - elbow[1]) / torso   # smaller y = higher on screen
 
 
-# ---------------------------------------------------------------
-# The checks
-# ---------------------------------------------------------------
-
 def make_check(rule_name, value, phase, missing_tip=NOT_MEASURED_TIP):
-    """One check in the shared team format. value=None means not measured."""
     info = CHECK_INFO[rule_name]
     low = ELBOW_RULES[rule_name]["min"]
     high = ELBOW_RULES[rule_name]["max"]
@@ -146,16 +111,9 @@ def make_check(rule_name, value, phase, missing_tip=NOT_MEASURED_TIP):
 
 
 def check_elbows(rows, contact_frame, release_frame=None):
-    """
-    rows:          landmark rows from pose_landmarks.py (load_rows)
-    contact_frame: frame number of ball contact
-    release_frame: frame the ball leaves the hands (None = use a fixed window)
-    Returns a list of 4 checks in the shared format.
-    """
     by_frame = {int(r["frame"]): r for r in rows}
     bodies = bodies_by_frame(rows)
 
-    # Frames around contact, averaged so one bad detection can't fail a check
     near = range(contact_frame - ELBOW_AVERAGE_FRAMES,
                  contact_frame + ELBOW_AVERAGE_FRAMES + 1)
     near_rows = [by_frame[f] for f in near if f in by_frame]
@@ -170,7 +128,6 @@ def check_elbows(rows, contact_frame, release_frame=None):
 
     symmetry = abs(left - right) if left is not None and right is not None else None
 
-    # Push-through: biggest elbow angle after contact, minus the angle at contact
     end = release_frame if release_frame is not None else contact_frame + FOLLOW_THROUGH_FRAMES
     end = max(end, contact_frame + 1)
     later = [average([elbow_angle(by_frame[f], "left"), elbow_angle(by_frame[f], "right")])
@@ -186,10 +143,6 @@ def check_elbows(rows, contact_frame, release_frame=None):
                    "Only one arm was visible from the side, so this wasn't scored."),
     ]
 
-
-# ---------------------------------------------------------------
-# Running it from the terminal
-# ---------------------------------------------------------------
 
 def main():
     parser = argparse.ArgumentParser(description="Check the elbows at contact.")
