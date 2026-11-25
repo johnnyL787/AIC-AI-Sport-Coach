@@ -12,7 +12,11 @@ CONTACT_RULES = {
     "hands_above_head_torso_lengths": {"min": 0.0, "max": 0.50},
     "contact_to_face_torso_lengths": {"min": 0.20, "max": 0.80},
     "contact_angle_deg": {"min": 0, "max": 40},
+    "follow_through_above_head_torso_lengths": {"min": 0.40, "max": None},
 }
 
 # How far above the nose the contact boundary line sits (torso lengths).
 CONTACT_BOUNDARY_ABOVE_NOSE = 0.25
+
+# How far sideways from the head the ball can be and still count (torso lengths).
+CONTACT_BALL_NEAR_HEAD = 1.5
