@@ -15,6 +15,20 @@ CONTACT_RULES = {
     "follow_through_above_head_torso_lengths": {"min": 0.40, "max": None},
 }
 
+# Johnny: elbow checks. Starting guesses, tune them on the test clips.
+ELBOW_RULES = {
+    "elbow_angle_deg": {"min": 90, "max": 130},              # bend at contact
+    "elbow_above_shoulder_torso_lengths": {"min": 0.0, "max": None},
+    "elbow_extension_deg": {"min": 40, "max": None},         # opens after contact
+    "elbow_symmetry_deg": {"min": 0, "max": 20},             # left vs right
+}
+
+# Skip a joint when MediaPipe's visibility score is below this.
+MIN_VISIBILITY = 0.5
+
+# How many frames on each side of contact to average (1 = 3 frames total).
+ELBOW_AVERAGE_FRAMES = 1
+
 # How far above the nose the contact boundary line sits (torso lengths).
 CONTACT_BOUNDARY_ABOVE_NOSE = 0.25
 

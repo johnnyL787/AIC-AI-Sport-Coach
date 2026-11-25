@@ -2,3 +2,5 @@ mediapipe
 opencv-python
 numpy
 streamlit
+pandas
+Authlib>=1.3.2
