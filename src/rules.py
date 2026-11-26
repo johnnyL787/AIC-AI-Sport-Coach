@@ -1,8 +1,9 @@
+# Pose numeric limits are provisional, calibrated on the six labeled test clips.
 # None means the bound has not been set yet.
 POSE_RULES = {
     "knee_forward_torso_lengths": {"min": None, "max": None},
-    "left_knee_lead_torso_lengths": {"min": None, "max": None},
-    "torso_lean_deg": {"min": None, "max": None},
+    "left_knee_lead_torso_lengths": {"min": None, "max": 0.15},
+    "torso_lean_deg": {"min": None, "max": 7.0},
 }
 
 # Praneet adds the hand and ball-contact ranges here.
