@@ -1,44 +1,179 @@
+import json
+import math
+import os
+import sys
+
 import cv2
 import numpy as np
-import csv
-import math
+from ultralytics import YOLO
+
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODEL_PATH = os.path.join(ROOT, "models", "yolo11m.pt")
+BALL_CLASSES = {"sports ball", "volleyball", "ball"}
 
 max_distance = 120
 max_lost = 6
-lock_frames = 10
-min_radius = 15
-max_radius = 80
-max_radius_change = 15
+min_track_points = 3
+min_still_points = 10
+min_score = 0.15
+moving_score = 0.25
+still_score = 0.45
+max_size_ratio = 2.5
 min_motion = 40
+min_travel = 0.1
+max_gravity = 0.01
+full_imgsz = 1280
+crop_imgsz = 640
+person_score = 0.3
+min_radius = 8
+max_radius = 150
+motion_scale = 0.5
+motion_threshold = 12
+motion_score = 0.3
+max_moving_fraction = 0.1
 
 
-def detect_circles(frame):
-    """Find round yellow and blue blobs, which is the volleyball in this video."""
-    hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
-    yellow = cv2.inRange(hsv, (8, 130, 130), (32, 255, 255))
-    blue = cv2.inRange(hsv, (100, 90, 50), (130, 255, 255))
-    mask = cv2.bitwise_or(yellow, blue)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), np.uint8))
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((9, 9), np.uint8))
+def make_detector():
+    """Load the YOLO model (downloaded on first use) and find its ball and person classes."""
+    model = YOLO(MODEL_PATH)
+    classes = [i for i, name in model.names.items() if name.lower() in BALL_CLASSES]
+    if not classes:
+        raise ValueError(f"{MODEL_PATH} has no ball class. Classes: {sorted(model.names.values())}")
+    people = [i for i, name in model.names.items() if name.lower() == "person"]
+    return {"model": model, "classes": classes, "people": people}
 
-    height, width = mask.shape
+
+def run_detector(detector, image, imgsz, offset_x=0, offset_y=0):
+    """Return balls as (x, y, r, score) and people as (x1, y1, x2, y2), in full-frame pixels."""
+    if image.shape[0] < 2 or image.shape[1] < 2:
+        return [], []
+    result = detector["model"].predict(
+        image, classes=detector["classes"] + detector["people"],
+        conf=min_score, imgsz=imgsz, verbose=False)[0]
+    balls = []
+    people = []
+    boxes = zip(result.boxes.xyxy.tolist(), result.boxes.conf.tolist(), result.boxes.cls.tolist())
+    for (x1, y1, x2, y2), score, cls in boxes:
+        x1, x2 = x1 + offset_x, x2 + offset_x
+        y1, y2 = y1 + offset_y, y2 + offset_y
+        if int(cls) in detector["people"]:
+            if score >= person_score:
+                people.append((x1, y1, x2, y2))
+            continue
+        w, h = x2 - x1, y2 - y1
+        if w <= 0 or h <= 0 or not 0.5 <= w / h <= 2.0:
+            continue
+        r = (w + h) / 4
+        balls.append((int(round((x1 + x2) / 2)), int(round((y1 + y2) / 2)),
+                      max(1, int(round(r))), float(score)))
+    return balls, people
+
+
+def detect_balls(detector, image, imgsz=full_imgsz):
+    return run_detector(detector, image, imgsz)
+
+
+def detect_near(detector, image, x, y, r):
+    """Search a zoomed-in window around where the ball should be. Cheaper than the full frame."""
+    height, width = image.shape[:2]
+    side = int(min(max(320, r * 10), width, height))
+    x0 = int(min(max(x - side // 2, 0), max(width - side, 0)))
+    y0 = int(min(max(y - side // 2, 0), max(height - side, 0)))
+    crop = image[y0:y0 + side, x0:x0 + side]
+    return run_detector(detector, crop, crop_imgsz, x0, y0)[0]
+
+
+def small_gray(frame):
+    small = cv2.resize(frame, None, fx=motion_scale, fy=motion_scale, interpolation=cv2.INTER_AREA)
+    return cv2.GaussianBlur(cv2.cvtColor(small, cv2.COLOR_BGR2GRAY), (5, 5), 0)
+
+
+def read_frames(video):
+    """Yield each frame with the grayscale frames just before and after it."""
+    ok, frame = video.read()
+    if not ok:
+        return
+    prev_gray, gray = None, small_gray(frame)
+    while True:
+        ok, nxt = video.read()
+        next_gray = small_gray(nxt) if ok else None
+        yield frame, prev_gray, gray, next_gray
+        if not ok:
+            return
+        frame, prev_gray, gray = nxt, gray, next_gray
+
+
+def align(other, gray):
+    """Warp other onto gray so camera panning and shaking cancel out.
+
+    Returns the warped frame and a mask of the pixels that both frames cover.
+    """
+    height, width = gray.shape
+    full = np.full_like(gray, 255)
+    corners = cv2.goodFeaturesToTrack(gray, maxCorners=400, qualityLevel=0.01, minDistance=8)
+    if corners is None or len(corners) < 10:
+        return other, full
+    moved, status, _ = cv2.calcOpticalFlowPyrLK(gray, other, corners, None)
+    good = status.ravel() == 1
+    if good.sum() < 10:
+        return other, full
+    matrix, _ = cv2.estimateAffinePartial2D(
+        moved[good], corners[good], method=cv2.RANSAC, ransacReprojThreshold=2.0)
+    if matrix is None:
+        return other, full
+    warped = cv2.warpAffine(other, matrix, (width, height), borderMode=cv2.BORDER_REPLICATE)
+    covered = cv2.warpAffine(full, matrix, (width, height), borderValue=0)
+    return warped, cv2.erode(covered, np.ones((9, 9), np.uint8))
+
+
+def detect_moving(prev_gray, gray, next_gray):
+    """Find compact moving blobs. Works in any light and for any ball color, even if the camera moves."""
+    diffs = []
+    covered = np.full_like(gray, 255)
+    for other in (prev_gray, next_gray):
+        if other is None:
+            continue
+        warped, mask = align(other, gray)
+        diffs.append(cv2.absdiff(gray, warped))
+        covered = cv2.bitwise_and(covered, mask)
+    if not diffs:
+        return []
+    motion = diffs[0] if len(diffs) == 1 else cv2.min(diffs[0], diffs[1])
+    _, mask = cv2.threshold(motion, motion_threshold, 255, cv2.THRESH_BINARY)
+    mask = cv2.bitwise_and(mask, covered)
+    if cv2.countNonZero(mask) > max_moving_fraction * mask.size:
+        return []
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), np.uint8))
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((3, 3), np.uint8))
     count, _, stats, centers = cv2.connectedComponentsWithStats(mask)
-    circles = []
+    balls = []
     for i in range(1, count):
-        area = int(stats[i, cv2.CC_STAT_AREA])
-        x, y, w, h = [int(stats[i, k]) for k in range(4)]
-        center_x, center_y = int(centers[i][0]), int(centers[i][1])
-        if center_y > height * 0.62 or center_x < 80 or center_x > width - 80:
+        w, h, area = stats[i, cv2.CC_STAT_WIDTH], stats[i, cv2.CC_STAT_HEIGHT], stats[i, cv2.CC_STAT_AREA]
+        if not 0.4 <= w / h <= 2.5 or area < 0.3 * w * h:
             continue
-        if area < 800 or area > 15000 or w > 160 or h > 160 or w < 25 or h < 25:
+        r = (w + h) / 4 / motion_scale
+        if not min_radius <= r <= max_radius:
             continue
-        if w / h < 0.6 or w / h > 1.6:
+        x = centers[i][0] / motion_scale
+        y = centers[i][1] / motion_scale
+        balls.append((int(round(x)), int(round(y)), int(round(r)), motion_score))
+    return balls
+
+
+def combine(found, moving, people):
+    """Add motion blobs that the model did not already report, skipping motion on a person's body."""
+    balls = list(found)
+    for blob in moving:
+        x, y = blob[0], blob[1]
+        if any(x1 <= x <= x2 and y1 <= y <= y2 for x1, y1, x2, y2 in people):
             continue
-        radius = int(round((w + h) / 4))
-        if radius < min_radius or radius > max_radius:
-            continue
-        circles.append((int(centers[i][0]), int(centers[i][1]), radius))
-    return circles
+        if all(math.hypot(x - b[0], y - b[1]) > max(b[2], blob[2]) for b in found):
+            balls.append(blob)
+    return balls
+
+
+def similar_size(r1, r2):
+    return max(r1, r2) <= max_size_ratio * max(min(r1, r2), 1)
 
 
 def predicted_center(track):
@@ -53,8 +188,8 @@ def predicted_center(track):
     return x, y
 
 
-def update_tracks(tracks, circles, frame_index):
-    unused = set(range(len(circles)))
+def update_tracks(tracks, balls, frame_index):
+    unused = set(range(len(balls)))
     ordered = sorted(tracks, key=lambda track: len(track["points"]), reverse=True)
     for track in ordered:
         last = track["points"][-1]
@@ -62,8 +197,8 @@ def update_tracks(tracks, circles, frame_index):
         best_i = None
         best_d = min(max_distance + track["missed"] * 20, 200)
         for i in unused:
-            x, y, r = circles[i]
-            if abs(r - last[3]) > max_radius_change:
+            x, y, r, _ = balls[i]
+            if not similar_size(r, last[3]):
                 continue
             dist = math.hypot(x - px, y - py)
             if dist < best_d:
@@ -72,36 +207,35 @@ def update_tracks(tracks, circles, frame_index):
         if best_i is None:
             track["missed"] += 1
         else:
-            x, y, r = circles[best_i]
-            track["points"].append((frame_index, x, y, r))
+            track["points"].append((frame_index, *balls[best_i]))
             track["missed"] = 0
             unused.remove(best_i)
     for i in unused:
-        x, y, r = circles[i]
-        tracks.append({"points": [(frame_index, x, y, r)], "missed": 0})
+        tracks.append({"points": [(frame_index, *balls[i])], "missed": 0})
     return [track for track in tracks if track["missed"] <= max_lost]
 
 
-def choose_ball(tracks, frame_index):
-    """Pick the colored blob that keeps moving, and ignore circles that stay still."""
+def choose_ball(tracks, frame_index, travel):
+    """Prefer the ball that is in play. A still ball only counts if nothing is moving.
+
+    travel is how far, in pixels, a track must move to count as a ball in flight.
+    """
     best_track = None
-    best_motion = 0
+    best_key = None
     for track in tracks:
         points = track["points"]
-        if len(points) < 5 or frame_index - points[-1][0] > 3:
+        if len(points) < min_track_points or frame_index - points[-1][0] > 3:
             continue
-        radii = [point[3] for point in points]
-        if max(radii) - min(radii) > max_radius_change:
+        confidence = sum(point[4] for point in points) / len(points)
+        motion = math.hypot(points[-1][1] - points[0][1], points[-1][2] - points[0][2])
+        moving = motion >= travel
+        if moving and confidence < moving_score:
             continue
-        steps = [math.hypot(b[1] - a[1], b[2] - a[2]) for a, b in zip(points, points[1:])]
-        moving_steps = sum(step >= 8 for step in steps)
-        vertical = abs(points[-1][2] - points[0][2])
-        horizontal = abs(points[-1][1] - points[0][1])
-        motion = math.hypot(horizontal, vertical)
-        if moving_steps < 3 or motion < min_motion or vertical < horizontal:
+        if not moving and (confidence < still_score or len(points) < min_still_points):
             continue
-        if motion > best_motion:
-            best_motion = motion
+        key = (moving, motion if moving else confidence)
+        if best_key is None or key > best_key:
+            best_key = key
             best_track = track
     return best_track
 
@@ -110,14 +244,12 @@ def blank_row(frame_index):
     return [frame_index, "", "", "", "", "", "", "", 0]
 
 
-def position_row(frame_index, x, y):
-    return [frame_index, int(x), int(y), "", "", "", "", "", 1]
-
-
 def motion_row(frame_index, x, y, vx, vy, detected, fps):
+    vx = round(float(vx), 1)
+    vy = round(float(vy), 1)
     speed = math.hypot(vx, vy)
     angle = math.degrees(math.atan2(-vy, vx))
-    return [frame_index, int(x), int(y), int(vx), int(vy),
+    return [frame_index, int(x), int(y), vx, vy,
             round(speed, 2), round(speed * fps, 2), round(angle, 1), detected]
 
 
@@ -133,18 +265,23 @@ def fill_window(track, start_frame, end_frame, fps):
             point = points[point_i]
             point_i += 1
         if point is not None:
-            if prev is not None and frame_index - prev[0] <= max_lost:
+            nxt = points[point_i] if point_i < len(points) else None
+            if prev is not None and 0 < frame_index - prev[0] <= max_lost:
                 gap = frame_index - prev[0]
-                vx = int(round((point[1] - prev[1]) / gap))
-                vy = int(round((point[2] - prev[2]) / gap))
-                rows.append(motion_row(frame_index, point[1], point[2], vx, vy, 1, fps))
+                vx = (point[1] - prev[1]) / gap
+                vy = (point[2] - prev[2]) / gap
+            elif nxt is not None and nxt[0] > frame_index:
+                gap = nxt[0] - frame_index
+                vx = (nxt[1] - point[1]) / gap
+                vy = (nxt[2] - point[2]) / gap
             else:
-                rows.append(position_row(frame_index, point[1], point[2]))
+                vx, vy = 0, 0
+            rows.append(motion_row(frame_index, point[1], point[2], vx, vy, 1, fps))
             prev = point
             continue
 
         nxt = points[point_i] if point_i < len(points) else None
-        if prev is not None and nxt is not None and nxt[0] - prev[0] <= max_lost:
+        if prev is not None and nxt is not None and 0 < nxt[0] - prev[0] <= max_lost:
             gap = nxt[0] - prev[0]
             step = frame_index - prev[0]
             vx = (nxt[1] - prev[1]) / gap
@@ -153,8 +290,8 @@ def fill_window(track, start_frame, end_frame, fps):
                 frame_index,
                 prev[1] + vx * step,
                 prev[2] + vy * step,
-                int(round(vx)),
-                int(round(vy)),
+                vx,
+                vy,
                 0,
                 fps))
             continue
@@ -162,6 +299,9 @@ def fill_window(track, start_frame, end_frame, fps):
         earlier = [item for item in points if prev is not None and item[0] < prev[0]]
         if prev is not None and nxt is None and earlier and frame_index - prev[0] <= max_lost:
             gap = prev[0] - earlier[-1][0]
+            if gap <= 0:
+                rows.append(blank_row(frame_index))
+                continue
             vx = (prev[1] - earlier[-1][1]) / gap
             vy = (prev[2] - earlier[-1][2]) / gap
             step = frame_index - prev[0]
@@ -169,8 +309,8 @@ def fill_window(track, start_frame, end_frame, fps):
                 frame_index,
                 prev[1] + vx * step,
                 prev[2] + vy * step,
-                int(round(vx)),
-                int(round(vy)),
+                vx,
+                vy,
                 0,
                 fps))
             continue
@@ -194,39 +334,68 @@ def state_from_rows(rows, radius):
     return {
         "x": int(last[1]),
         "y": int(last[2]),
-        "vx": int(last[3]) if have_vel else 0,
-        "vy": int(last[4]) if have_vel else 0,
+        "vx": float(last[3]) if have_vel else 0.0,
+        "vy": float(last[4]) if have_vel else 0.0,
         "r": int(radius),
         "lost": trailing,
         "have_vel": have_vel,
+        "frame": int(last[0]),
+        "ay": 0.0,
     }
 
 
-def draw_ball(frame, x, y, r, detected):
+def draw_ball(frame, x, y, r, detected, speed):
     color = (0, 255, 0) if detected else (0, 255, 255)
-    cv2.circle(frame, (int(x), int(y)), int(r), color, 4)
+    x, y, r = int(x), int(y), int(r)
+    cv2.circle(frame, (x, y), r, color, 4)
+    text = f"x:{x}  y:{y}  {float(speed):.1f} px/s"
+    cv2.putText(
+        frame, text, (x + r + 8, y),
+        cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
 
 
-def track_video(video, fps):
+def predict(state):
+    """Where the ball should be next frame, including the pull of gravity."""
+    return state["x"] + state["vx"], state["y"] + state["vy"] + state["ay"]
+
+
+def closest_ball(balls, state):
+    px, py = predict(state)
+    best = None
+    best_d = min(max_distance + state["lost"] * 20, 200)
+    for x, y, r, _ in balls:
+        if not similar_size(r, state["r"]):
+            continue
+        dist = math.hypot(x - px, y - py)
+        if dist < best_d:
+            best_d = dist
+            best = (x, y, r)
+    return best
+
+
+def track_video(video, fps, detector, show=False, progress=False):
     track_data = []
     tracks = []
     state = None
     mode = "lock"
     next_row = 0
     current_frame = 0
+    total = int(video.get(cv2.CAP_PROP_FRAME_COUNT)) or "?"
+    height = video.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0
+    travel = max(min_motion, min_travel * height)
 
-    while True:
-        ret, frame = video.read()
-        if not ret:
-            break
-        circles = detect_circles(frame)
-
+    for frame, prev_gray, gray, next_gray in read_frames(video):
+        if progress:
+            print(f"\rProcessing frame {current_frame + 1}/{total}", end="", flush=True)
+        moving = detect_moving(prev_gray, gray, next_gray)
         if mode == "lock":
-            tracks = update_tracks(tracks, circles, current_frame)
-            for x, y, r in circles:
+            found, people = detect_balls(detector, frame)
+            balls = combine(found, moving, people)
+            tracks = update_tracks(tracks, balls, current_frame)
+            for x, y, r, _ in balls:
                 cv2.circle(frame, (x, y), r, (0, 255, 255), 2)
-            if current_frame + 1 >= lock_frames:
-                chosen = choose_ball(tracks, current_frame)
+            if current_frame + 1 >= min_track_points:
+                chosen = choose_ball(tracks, current_frame, travel)
                 if chosen is not None:
                     rows, radius = fill_window(chosen, next_row, current_frame + 1, fps)
                     state = state_from_rows(rows, radius)
@@ -236,43 +405,44 @@ def track_video(video, fps):
                         mode = "track"
                         current = rows[-1]
                         if current[1] != "":
-                            draw_ball(frame, current[1], current[2], radius, current[8])
+                            draw_ball(frame, current[1], current[2], radius, current[8], current[6])
         else:
-            px = state["x"] + state["vx"]
-            py = state["y"] + state["vy"]
-            best = None
-            best_d = min(max_distance + state["lost"] * 20, 200)
-            for x, y, r in circles:
-                if abs(r - state["r"]) > max_radius_change:
-                    continue
-                dist = math.hypot(x - px, y - py)
-                if dist < best_d:
-                    best_d = dist
-                    best = (x, y, r)
+            px, py = predict(state)
+            found, people = detect_balls(detector, frame, crop_imgsz)
+            best = closest_ball(combine(found, moving, people), state)
+            if best is None:
+                best = closest_ball(detect_near(detector, frame, px, py, state["r"]), state)
             if best is not None:
                 x, y, r = best
-                vx = int(x - state["x"])
-                vy = int(y - state["y"])
-                if state["have_vel"] or state["lost"] == 0:
-                    track_data.append(motion_row(current_frame, x, y, vx, vy, 1, fps))
-                    state["vx"], state["vy"] = vx, vy
-                    state["have_vel"] = True
-                else:
-                    track_data.append(position_row(current_frame, x, y))
-                state["x"], state["y"], state["r"] = x, y, r
+                gap = max(current_frame - state["frame"], 1)
+                vx = (x - state["x"]) / gap
+                vy = (y - state["y"]) / gap
+                track_data.append(motion_row(current_frame, x, y, vx, vy, 1, fps))
+                vx = round(float(vx), 1)
+                vy = round(float(vy), 1)
+                if gap == 1 and state["have_vel"] and state["lost"] == 0:
+                    pull = 0.5 * state["ay"] + 0.5 * (vy - state["vy"])
+                    state["ay"] = min(max(pull, 0.0), max_gravity * height)
+                state["vx"], state["vy"] = vx, vy
+                state["have_vel"] = True
+                state["x"], state["y"] = x, y
+                state["r"] = int(round(0.7 * state["r"] + 0.3 * r))
+                state["frame"] = current_frame
                 state["lost"] = 0
-                draw_ball(frame, x, y, r, 1)
+                draw_ball(frame, x, y, r, 1, math.hypot(vx, vy) * fps)
             else:
                 state["lost"] += 1
-                height, width = frame.shape[:2]
-                x = int(state["x"] + state["vx"])
-                y = int(state["y"] + state["vy"])
-                inside = 0 <= x < width and 0 <= y < height
+                frame_h, frame_w = frame.shape[:2]
+                x, y = predict(state)
+                x, y = int(x), int(y)
+                inside = 0 <= x < frame_w and 0 <= y < frame_h
                 if state["lost"] <= max_lost and state["have_vel"] and inside:
+                    state["vy"] = round(state["vy"] + state["ay"], 1)
                     track_data.append(motion_row(
                         current_frame, x, y, state["vx"], state["vy"], 0, fps))
                     state["x"], state["y"] = x, y
-                    draw_ball(frame, x, y, state["r"], 0)
+                    state["frame"] = current_frame
+                    draw_ball(frame, x, y, state["r"], 0, math.hypot(state["vx"], state["vy"]) * fps)
                 else:
                     track_data.append(blank_row(current_frame))
                     if state["lost"] > max_lost:
@@ -281,13 +451,16 @@ def track_video(video, fps):
                         state = None
             next_row = current_frame + 1
 
-        cv2.imshow("Ball Tracking", frame)
-        if cv2.waitKey(25) & 0xFF == ord("q"):
-            break
+        if show:
+            cv2.imshow("Ball Tracking", frame)
+            if cv2.waitKey(25) & 0xFF == ord("q"):
+                break
         current_frame += 1
 
+    if progress:
+        print()
     if mode == "lock" and current_frame > next_row:
-        chosen = choose_ball(tracks, current_frame - 1) if current_frame else None
+        chosen = choose_ball(tracks, current_frame - 1, travel) if current_frame else None
         if chosen is not None:
             rows, radius = fill_window(chosen, next_row, current_frame, fps)
             if state_from_rows(rows, radius) is not None:
@@ -299,22 +472,83 @@ def track_video(video, fps):
     return track_data
 
 
-def main():
-    video_path = input("Enter the path of the video file: ")
-    output_file = "ball_tracking.csv"
+def ball_record(row):
+    """One frame for the UI. A missed frame has null numbers and detected false."""
+    frame = int(row[0])
+    if row[1] == "" or row[3] == "":
+        return {"frame": frame, "x": None, "y": None, "vx": None, "vy": None, "detected": False}
+    return {
+        "frame": frame,
+        "x": int(row[1]),
+        "y": int(row[2]),
+        "vx": round(float(row[3]), 1),
+        "vy": round(float(row[4]), 1),
+        "detected": bool(row[8]),
+    }
+
+
+def track_ball(video_path, show=False, progress=False):
+    """Return the ball's position and speed for every frame.
+
+    The result is {"ball": [{"frame", "x", "y", "vx", "vy", "detected"}, ...]}.
+    Missed frames stay in the list with null x, y, vx, and vy.
+    """
     video = cv2.VideoCapture(video_path)
     if not video.isOpened():
-        print("Error: Could not open video file.")
-        return
+        return None
     fps = video.get(cv2.CAP_PROP_FPS) or 30
-    track_data = track_video(video, fps)
-    video.release()
-    cv2.destroyAllWindows()
+    detector = make_detector()
+    try:
+        rows = track_video(video, fps, detector, show=show, progress=progress)
+    finally:
+        video.release()
+        if show:
+            cv2.destroyAllWindows()
+    return {"ball": [ball_record(row) for row in rows]}
 
-    with open(output_file, "w", newline="") as file:
-        writer = csv.writer(file)
-        writer.writerow(["Frame", "X", "Y", "VX", "VY", "Speed", "Speed(px/s)", "Angle", "Detected"])
-        writer.writerows(track_data)
+
+def clean_path(text):
+    """Accept paths pasted with quotes, such as from File Explorer's Copy as path."""
+    return os.path.expanduser(text.strip().strip('"').strip("'"))
+
+
+def ask_for_video():
+    while True:
+        video_path = clean_path(input("Enter the path of the video file: "))
+        if os.path.isfile(video_path):
+            return video_path
+        print(f"No file found at {video_path}. Try again, or press Ctrl+C to quit.")
+
+
+def main():
+    if len(sys.argv) > 1:
+        video_path = clean_path(" ".join(sys.argv[1:]))
+        if not os.path.isfile(video_path):
+            print(f"No file found at {video_path}")
+            sys.exit(1)
+    else:
+        video_path = ask_for_video()
+
+    output_file = os.path.abspath("ball_tracking.json")
+    print("Tracking the ball. Press q in the video window to stop early.")
+    try:
+        payload = track_ball(video_path, show=True, progress=True)
+    except KeyboardInterrupt:
+        print("\nStopped. No file was saved.")
+        sys.exit(1)
+    if payload is None:
+        print(f"Could not open {video_path} as a video.")
+        sys.exit(1)
+
+    with open(output_file, "w") as file:
+        json.dump(payload, file, indent=2)
+        file.write("\n")
+
+    frames = payload["ball"]
+    seen = sum(1 for f in frames if f["detected"])
+    estimated = sum(1 for f in frames if f["x"] is not None and not f["detected"])
+    missing = len(frames) - seen - estimated
+    print(f"Done. {len(frames)} frames: ball seen in {seen}, estimated in {estimated}, missing in {missing}.")
     print(f"Tracking data has been saved to {output_file}")
 
 
