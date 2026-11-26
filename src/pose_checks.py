@@ -1,6 +1,7 @@
 import argparse
 import csv
 import math
+import json
 
 from rules import POSE_RULES
 
@@ -71,6 +72,72 @@ def check_range(rule_name, *values):
     return "PASS"
 
 
+
+def make_pose_check(name, value, rule_name, unit, frame, low_tip, high_tip):
+    limits = POSE_RULES[rule_name]
+    minimum, maximum = limits["min"], limits["max"]
+    if value is None:
+        passed, tip = None, "Landmarks unavailable at the selected frame."
+    elif minimum is None and maximum is None:
+        passed, tip = None, "Measurement recorded; limits have not been set."
+    elif minimum is not None and value < minimum:
+        passed, tip = False, low_tip
+    elif maximum is not None and value > maximum:
+        passed, tip = False, high_tip
+    else:
+        passed, tip = True, "Within the current trial range."
+    return {
+        "name": name, "part": "pose",
+        "value": None if value is None else round(value, 3),
+        "unit": unit, "min": minimum, "max": maximum,
+        "passed": passed, "tip": tip, "frame": frame,
+    }
+
+
+def analyze_pose(landmarks_csv, facing, knee_frame, contact_frame):
+    """Return UI checks at explicitly selected preparation/contact frames.
+
+    Frame selection is supplied by the caller. Missing or invalid points
+    produce unevaluated checks (passed=None), rather than a passing score.
+    """
+    if facing not in ("left", "right"):
+        raise ValueError("facing must be left or right")
+    if not 0 <= knee_frame <= contact_frame:
+        raise ValueError("Require 0 <= knee_frame <= contact_frame")
+    with open(landmarks_csv, newline="") as source:
+        rows = {int(row["frame"]): row for row in csv.DictReader(source)}
+
+    def measurements(frame):
+        if frame not in rows:
+            return (None,) * 4
+        try:
+            return measure_pose(rows[frame], facing)
+        except (KeyError, ValueError, TypeError):
+            return (None,) * 4
+
+    left, right, lead, _ = measurements(knee_frame)
+    _, _, _, lean = measurements(contact_frame)
+    checks = []
+    for side, value in (("Left", left), ("Right", right)):
+        checks.append(make_pose_check(
+            side + " knee forward offset", value,
+            "knee_forward_torso_lengths", "torso lengths", knee_frame,
+            "Review knee position during preparation.",
+            "Review knee position during preparation.",
+        ))
+    checks.append(make_pose_check(
+        "Left knee lead", lead, "left_knee_lead_torso_lengths",
+        "torso lengths", knee_frame,
+        "Review the knee offsets during preparation.",
+        "Reduce the left knee's forward lead relative to the right.",
+    ))
+    checks.append(make_pose_check(
+        "Torso lean at contact", lean, "torso_lean_deg", "deg", contact_frame,
+        "Review torso position around contact.",
+        "Keep the torso closer to upright around contact.",
+    ))
+    return checks
+
 def main():
     parser = argparse.ArgumentParser(
         description="Measure knee position and torso lean from a landmark CSV."
@@ -82,7 +149,17 @@ def main():
         required=True,
         help="Which direction the setter faces on screen",
     )
+    parser.add_argument("--knee-frame", type=int)
+    parser.add_argument("--contact-frame", type=int)
     args = parser.parse_args()
+    if args.knee_frame is not None or args.contact_frame is not None:
+        if args.knee_frame is None or args.contact_frame is None:
+            parser.error("Supply both --knee-frame and --contact-frame")
+        print(json.dumps(analyze_pose(
+            args.csv_path, args.facing, args.knee_frame, args.contact_frame
+        ), indent=2, allow_nan=False))
+        return
+
 
     with open(args.csv_path, newline="") as csv_file:
         rows = csv.DictReader(csv_file)
